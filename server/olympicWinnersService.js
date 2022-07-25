@@ -2,8 +2,8 @@ import mysql from 'mysql';
 
 const connection = mysql.createConnection({
     host: 'localhost',
-    user: 'reporting_app',
-    password: 'password123'
+    user: 'root',
+    password: ''
 });
 
 class OlympicWinnersService {
