@@ -1,9 +1,9 @@
 import mysql from 'mysql';
 
 const connection = mysql.createConnection({
-    host: 'localhost',
-    user: 'root',
-    password: ''
+    host: 'us-cdbr-east-06.cleardb.net',
+    user: 'b7f2f3baac66f5',
+    password: 'a6f0abdf'
 });
 
 class OlympicWinnersService {
@@ -23,7 +23,7 @@ class OlympicWinnersService {
     buildSql(request) {
 
         const selectSql = this.createSelectSql(request);
-        const fromSql = ' FROM sample_data.olympic_winners ';
+        const fromSql = ' FROM heroku_fbaf3642242086f.olympic_winners ';
         const whereSql = this.createWhereSql(request);
         const limitSql = this.createLimitSql(request);
 
