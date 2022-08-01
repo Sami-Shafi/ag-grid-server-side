@@ -1,223 +1,237 @@
-import mysql from 'mysql';
+import mysql from "mysql";
 
-const connection = mysql.createConnection({
-    host: 'us-cdbr-east-06.cleardb.net',
-    user: 'b7f2f3baac66f5',
-    password: 'a6f0abdf'
+const connection = mysql.createPool({
+	host: "us-cdbr-east-06.cleardb.net",
+	user: "b7f2f3baac66f5",
+	password: "a6f0abdf",
+	database: "heroku_fbaf3642242086f",
 });
 
 class OlympicWinnersService {
+	getData(request, resultsCallback) {
+		const SQL = this.buildSql(request);
 
-    getData(request, resultsCallback) {
+		connection.query(SQL, (error, results) => {
+			const rowCount = this.getRowCount(request, results);
+			const resultsForPage = this.cutResultsToPageSize(request, results);
 
-        const SQL = this.buildSql(request);
+			resultsCallback(resultsForPage, rowCount);
+		});
+	}
 
-        connection.query(SQL, (error, results) => {
-            const rowCount = this.getRowCount(request, results);
-            const resultsForPage = this.cutResultsToPageSize(request, results);
+	buildSql(request) {
+		const selectSql = this.createSelectSql(request);
+		const fromSql = " FROM olympic_winners ";
+		const whereSql = this.createWhereSql(request);
+		const limitSql = this.createLimitSql(request);
 
-            resultsCallback(resultsForPage, rowCount);
-        });
-    }
+		const orderBySql = this.createOrderBySql(request);
+		const groupBySql = this.createGroupBySql(request);
 
-    buildSql(request) {
+		const SQL =
+			selectSql + fromSql + whereSql + groupBySql + orderBySql + limitSql;
 
-        const selectSql = this.createSelectSql(request);
-        const fromSql = ' FROM heroku_fbaf3642242086f.olympic_winners ';
-        const whereSql = this.createWhereSql(request);
-        const limitSql = this.createLimitSql(request);
+		console.log(SQL);
 
-        const orderBySql = this.createOrderBySql(request);
-        const groupBySql = this.createGroupBySql(request);
+		return SQL;
+	}
 
-        const SQL = selectSql + fromSql + whereSql + groupBySql + orderBySql + limitSql;
+	createSelectSql(request) {
+		const rowGroupCols = request.rowGroupCols;
+		const valueCols = request.valueCols;
+		const groupKeys = request.groupKeys;
 
-        console.log(SQL);
+		if (this.isDoingGrouping(rowGroupCols, groupKeys)) {
+			const colsToSelect = [];
 
-        return SQL;
-    }
+			const rowGroupCol = rowGroupCols[groupKeys.length];
+			colsToSelect.push(rowGroupCol.field);
 
-    createSelectSql(request) {
-        const rowGroupCols = request.rowGroupCols;
-        const valueCols = request.valueCols;
-        const groupKeys = request.groupKeys;
+			valueCols.forEach(function (valueCol) {
+				colsToSelect.push(
+					valueCol.aggFunc +
+						"(" +
+						valueCol.field +
+						") as " +
+						valueCol.field
+				);
+			});
 
-        if (this.isDoingGrouping(rowGroupCols, groupKeys)) {
-            const colsToSelect = [];
+			return " select " + colsToSelect.join(", ");
+		}
 
-            const rowGroupCol = rowGroupCols[groupKeys.length];
-            colsToSelect.push(rowGroupCol.field);
+		return " select *";
+	}
 
-            valueCols.forEach(function (valueCol) {
-                colsToSelect.push(valueCol.aggFunc + '(' + valueCol.field + ') as ' + valueCol.field);
-            });
+	createFilterSql(key, item) {
+		switch (item.filterType) {
+			case "text":
+				return this.createTextFilterSql(key, item);
+			case "number":
+				return this.createNumberFilterSql(key, item);
+			default:
+				console.log("unkonwn filter type: " + item.filterType);
+		}
+	}
 
-            return ' select ' + colsToSelect.join(', ');
-        }
+	createNumberFilterSql(key, item) {
+		switch (item.type) {
+			case "equals":
+				return key + " = " + item.filter;
+			case "notEqual":
+				return key + " != " + item.filter;
+			case "greaterThan":
+				return key + " > " + item.filter;
+			case "greaterThanOrEqual":
+				return key + " >= " + item.filter;
+			case "lessThan":
+				return key + " < " + item.filter;
+			case "lessThanOrEqual":
+				return key + " <= " + item.filter;
+			case "inRange":
+				return (
+					"(" +
+					key +
+					" >= " +
+					item.filter +
+					" and " +
+					key +
+					" <= " +
+					item.filterTo +
+					")"
+				);
+			default:
+				console.log("unknown number filter type: " + item.type);
+				return "true";
+		}
+	}
 
-        return ' select *';
-    }
+	createTextFilterSql(key, item) {
+		switch (item.type) {
+			case "equals":
+				return key + ' = "' + item.filter + '"';
+			case "notEqual":
+				return key + ' != "' + item.filter + '"';
+			case "contains":
+				return key + ' like "%' + item.filter + '%"';
+			case "notContains":
+				return key + ' not like "%' + item.filter + '%"';
+			case "startsWith":
+				return key + ' like "' + item.filter + '%"';
+			case "endsWith":
+				return key + ' like "%' + item.filter + '"';
+			default:
+				console.log("unknown text filter type: " + item.type);
+				return "true";
+		}
+	}
 
-    createFilterSql(key, item) {
-        switch (item.filterType) {
-            case 'text':
-                return this.createTextFilterSql(key, item);
-            case 'number':
-                return this.createNumberFilterSql(key, item);
-            default:
-                console.log('unkonwn filter type: ' + item.filterType);
-        }
-    }
+	createWhereSql(request) {
+		const rowGroupCols = request.rowGroupCols;
+		const groupKeys = request.groupKeys;
+		const filterModel = request.filterModel;
 
-    createNumberFilterSql(key, item) {
-        switch (item.type) {
-            case 'equals':
-                return key + ' = ' + item.filter;
-            case 'notEqual':
-                return key + ' != ' + item.filter;
-            case 'greaterThan':
-                return key + ' > ' + item.filter;
-            case 'greaterThanOrEqual':
-                return key + ' >= ' + item.filter;
-            case 'lessThan':
-                return key + ' < ' + item.filter;
-            case 'lessThanOrEqual':
-                return key + ' <= ' + item.filter;
-            case 'inRange':
-                return '(' + key + ' >= ' + item.filter + ' and ' + key + ' <= ' + item.filterTo + ')';
-            default:
-                console.log('unknown number filter type: ' + item.type);
-                return 'true';
-        }
-    }
+		const that = this;
+		const whereParts = [];
 
-    createTextFilterSql(key, item) {
-        switch (item.type) {
-            case 'equals':
-                return key + ' = "' + item.filter + '"';
-            case 'notEqual':
-                return key + ' != "' + item.filter + '"';
-            case 'contains':
-                return key + ' like "%' + item.filter + '%"';
-            case 'notContains':
-                return key + ' not like "%' + item.filter + '%"';
-            case 'startsWith':
-                return key + ' like "' + item.filter + '%"';
-            case 'endsWith':
-                return key + ' like "%' + item.filter + '"';
-            default:
-                console.log('unknown text filter type: ' + item.type);
-                return 'true';
-        }
-    }
+		if (groupKeys.length > 0) {
+			groupKeys.forEach(function (key, index) {
+				const colName = rowGroupCols[index].field;
+				whereParts.push(colName + ' = "' + key + '"');
+			});
+		}
 
-    createWhereSql(request) {
-        const rowGroupCols = request.rowGroupCols;
-        const groupKeys = request.groupKeys;
-        const filterModel = request.filterModel;
+		if (filterModel) {
+			const keySet = Object.keys(filterModel);
+			keySet.forEach(function (key) {
+				const item = filterModel[key];
+				whereParts.push(that.createFilterSql(key, item));
+			});
+		}
 
-        const that = this;
-        const whereParts = [];
+		if (whereParts.length > 0) {
+			return " where " + whereParts.join(" and ");
+		} else {
+			return "";
+		}
+	}
 
-        if (groupKeys.length > 0) {
-            groupKeys.forEach(function (key, index) {
-                const colName = rowGroupCols[index].field;
-                whereParts.push(colName + ' = "' + key + '"')
-            });
-        }
+	createGroupBySql(request) {
+		const rowGroupCols = request.rowGroupCols;
+		const groupKeys = request.groupKeys;
 
-        if (filterModel) {
-            const keySet = Object.keys(filterModel);
-            keySet.forEach(function (key) {
-                const item = filterModel[key];
-                whereParts.push(that.createFilterSql(key, item));
-            });
-        }
+		if (this.isDoingGrouping(rowGroupCols, groupKeys)) {
+			const colsToGroupBy = [];
 
-        if (whereParts.length > 0) {
-            return ' where ' + whereParts.join(' and ');
-        } else {
-            return '';
-        }
-    }
+			const rowGroupCol = rowGroupCols[groupKeys.length];
+			colsToGroupBy.push(rowGroupCol.field);
 
-    createGroupBySql(request) {
-        const rowGroupCols = request.rowGroupCols;
-        const groupKeys = request.groupKeys;
+			return " group by " + colsToGroupBy.join(", ");
+		} else {
+			// select all columns
+			return "";
+		}
+	}
 
-        if (this.isDoingGrouping(rowGroupCols, groupKeys)) {
-            const colsToGroupBy = [];
+	createOrderBySql(request) {
+		const rowGroupCols = request.rowGroupCols;
+		const groupKeys = request.groupKeys;
+		const sortModel = request.sortModel;
 
-            const rowGroupCol = rowGroupCols[groupKeys.length];
-            colsToGroupBy.push(rowGroupCol.field);
+		const grouping = this.isDoingGrouping(rowGroupCols, groupKeys);
 
-            return ' group by ' + colsToGroupBy.join(', ');
-        } else {
-            // select all columns
-            return '';
-        }
-    }
+		const sortParts = [];
+		if (sortModel) {
+			const groupColIds = rowGroupCols
+				.map((groupCol) => groupCol.id)
+				.slice(0, groupKeys.length + 1);
 
-    createOrderBySql(request) {
-        const rowGroupCols = request.rowGroupCols;
-        const groupKeys = request.groupKeys;
-        const sortModel = request.sortModel;
+			sortModel.forEach(function (item) {
+				if (grouping && groupColIds.indexOf(item.colId) < 0) {
+					// ignore
+				} else {
+					sortParts.push(item.colId + " " + item.sort);
+				}
+			});
+		}
 
-        const grouping = this.isDoingGrouping(rowGroupCols, groupKeys);
+		if (sortParts.length > 0) {
+			return " order by " + sortParts.join(", ");
+		} else {
+			return "";
+		}
+	}
 
-        const sortParts = [];
-        if (sortModel) {
+	isDoingGrouping(rowGroupCols, groupKeys) {
+		// we are not doing grouping if at the lowest level. we are at the lowest level
+		// if we are grouping by more columns than we have keys for (that means the user
+		// has not expanded a lowest level group, OR we are not grouping at all).
+		return rowGroupCols.length > groupKeys.length;
+	}
 
-            const groupColIds =
-                rowGroupCols.map(groupCol => groupCol.id)
-                    .slice(0, groupKeys.length + 1);
+	createLimitSql(request) {
+		const startRow = request.startRow;
+		const endRow = request.endRow;
+		const pageSize = endRow - startRow;
+		return " limit " + (pageSize + 1) + " offset " + startRow;
+	}
 
-            sortModel.forEach(function (item) {
-                if (grouping && groupColIds.indexOf(item.colId) < 0) {
-                    // ignore
-                } else {
-                    sortParts.push(item.colId + ' ' + item.sort);
-                }
-            });
-        }
+	getRowCount(request, results) {
+		if (results === null || results === undefined || results.length === 0) {
+			return null;
+		}
+		const currentLastRow = request.startRow + results.length;
+		return currentLastRow <= request.endRow ? currentLastRow : -1;
+	}
 
-        if (sortParts.length > 0) {
-            return ' order by ' + sortParts.join(', ');
-        } else {
-            return '';
-        }
-    }
-
-    isDoingGrouping(rowGroupCols, groupKeys) {
-        // we are not doing grouping if at the lowest level. we are at the lowest level
-        // if we are grouping by more columns than we have keys for (that means the user
-        // has not expanded a lowest level group, OR we are not grouping at all).
-        return rowGroupCols.length > groupKeys.length;
-    }
-
-    createLimitSql(request) {
-        const startRow = request.startRow;
-        const endRow = request.endRow;
-        const pageSize = endRow - startRow;
-        return ' limit ' + (pageSize + 1) + ' offset ' + startRow;
-    }
-
-    getRowCount(request, results) {
-        if (results === null || results === undefined || results.length === 0) {
-            return null;
-        }
-        const currentLastRow = request.startRow + results.length;
-        return currentLastRow <= request.endRow ? currentLastRow : -1;
-    }
-
-    cutResultsToPageSize(request, results) {
-        const pageSize = request.endRow - request.startRow;
-        if (results && results.length > pageSize) {
-            return results.splice(0, pageSize);
-        } else {
-            return results;
-        }
-    }
+	cutResultsToPageSize(request, results) {
+		const pageSize = request.endRow - request.startRow;
+		if (results && results.length > pageSize) {
+			return results.splice(0, pageSize);
+		} else {
+			return results;
+		}
+	}
 }
 
 export default new OlympicWinnersService();
