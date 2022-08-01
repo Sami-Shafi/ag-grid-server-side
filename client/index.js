@@ -35,7 +35,7 @@ new Grid(gridDiv, gridOptions);
 
 const datasource = {
     getRows(params) {
-         console.log(JSON.stringify(params.request, null, 1));
+        //  console.log(JSON.stringify(params.request, null, 1));
 
          fetch('./olympicWinners/', {
              method: 'post',
